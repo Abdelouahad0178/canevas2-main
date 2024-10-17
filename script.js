@@ -1494,10 +1494,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const canvas = new fabric.Canvas('canvas', {
         isDrawingMode: false,
         backgroundColor: 'white',
-        allowTouchScrolling: false, // Désactiver le défilement tactile par défaut de Fabric.js
+        allowTouchScrolling: true, // activer le défilement tactile par défaut de Fabric.js
         selection: true, // Activer la sélection pour interagir avec les objets
         width: drawingBoard.clientWidth, // Largeur du conteneur
-        height: 2244 // Hauteur équivalente à 20 pages A4
+        height: 4440 // Hauteur équivalente à 20 pages A4
     });
 
     // Ajuster le canevas lors du redimensionnement de la fenêtre (seulement la largeur)
