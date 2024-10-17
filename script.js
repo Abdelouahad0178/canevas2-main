@@ -1321,133 +1321,100 @@ class UndoRedoModule {
     }
 }
 
-// Module de Gestion des Gestes Tactiles avec Hammer.js
+// Module de Gestion des Gestes Tactiles avec ZingTouch
 class TouchModule {
     constructor(canvas, historyModule) {
         this.canvas = canvas;
         this.historyModule = historyModule;
-        this.hammer = null;
+        this.zingRegion = null;
+        this.lastZoom = this.canvas.getZoom();
+        this.lastScaleX = 1;
+        this.lastScaleY = 1;
+        this.isPinching = false;
     }
 
     init() {
-        this.disableFabricTouchEvents();
-        this.initHammer();
+        this.setupZingTouch();
     }
 
-    disableFabricTouchEvents() {
-        // Désactiver les événements tactiles par défaut de Fabric.js
-        this.canvas.allowTouchScrolling = false;
-        this.canvas.selection = false;
-
-        // Supprimer les écouteurs tactiles de Fabric.js
-        const canvasElement = this.canvas.upperCanvasEl;
-        canvasElement.removeEventListener('touchstart', this.canvas._onTouchStart);
-        canvasElement.removeEventListener('touchmove', this.canvas._onTouchMove);
-        canvasElement.removeEventListener('touchend', this.canvas._onTouchEnd);
-    }
-
-    initHammer() {
+    setupZingTouch() {
         const canvasElement = this.canvas.upperCanvasEl;
 
         // Empêcher les comportements tactiles par défaut du navigateur
         canvasElement.style.touchAction = 'none';
 
-        // Initialiser Hammer.js sur le canevas
-        this.hammer = new Hammer.Manager(canvasElement);
+        // Initialiser ZingTouch sur le canevas
+        this.zingRegion = new ZingTouch.Region(canvasElement);
 
-        // Ajouter les reconnaisseurs de gestes
-        const pinch = new Hammer.Pinch();
-        const pan = new Hammer.Pan({ direction: Hammer.DIRECTION_ALL, threshold: 0 });
-
-        this.hammer.add([pinch, pan]);
-
-        // Gestion des événements de pincement
-        this.hammer.on('pinchstart', (ev) => {
-            this.lastZoom = this.canvas.getZoom();
+        // Geste de pincement pour zoomer ou redimensionner
+        const pinchGesture = new ZingTouch.Pinch();
+        this.zingRegion.bind(canvasElement, pinchGesture, (e) => {
+            e.preventDefault();
+            const scale = e.detail.scale;
 
             const activeObject = this.canvas.getActiveObject();
+
             if (activeObject) {
-                this.lastScaleX = activeObject.scaleX || 1;
-                this.lastScaleY = activeObject.scaleY || 1;
+                if (!this.isPinching) {
+                    this.isPinching = true;
+                    this.lastScaleX = activeObject.scaleX || 1;
+                    this.lastScaleY = activeObject.scaleY || 1;
+                }
+
+                let newScaleX = this.lastScaleX * scale;
+                let newScaleY = this.lastScaleY * scale;
+
+                // Limiter le scale
+                newScaleX = Math.max(0.1, Math.min(newScaleX, 10));
+                newScaleY = Math.max(0.1, Math.min(newScaleY, 10));
+
+                activeObject.scaleX = newScaleX;
+                activeObject.scaleY = newScaleY;
+                activeObject.setCoords();
+                this.canvas.requestRenderAll();
+            } else {
+                if (!this.isPinching) {
+                    this.isPinching = true;
+                    this.lastZoom = this.canvas.getZoom();
+                }
+
+                let newZoom = this.lastZoom * scale;
+
+                // Limiter le zoom
+                newZoom = Math.max(0.5, Math.min(newZoom, 3));
+
+                const center = new fabric.Point(
+                    e.detail.events[0].clientX - this.canvas._offset.left,
+                    e.detail.events[0].clientY - this.canvas._offset.top
+                );
+                this.canvas.zoomToPoint(center, newZoom);
             }
         });
 
-        this.hammer.on('pinchmove', (ev) => {
-            this.handlePinch(ev);
+        // Geste de balayage pour déplacer le canevas
+        const panGesture = new ZingTouch.Pan();
+        this.zingRegion.bind(canvasElement, panGesture, (e) => {
+            e.preventDefault();
+            const activeObject = this.canvas.getActiveObject();
+
+            if (!activeObject) {
+                const deltaX = e.detail.data[0].change.x;
+                const deltaY = e.detail.data[0].change.y;
+
+                const vpt = this.canvas.viewportTransform;
+                vpt[4] += deltaX;
+                vpt[5] += deltaY;
+                this.canvas.requestRenderAll();
+            }
         });
 
-        this.hammer.on('pinchend', (ev) => {
-            this.lastZoom = this.canvas.getZoom();
-
-            const activeObject = this.canvas.getActiveObject();
-            if (activeObject) {
+        // Réinitialiser les états après le geste
+        canvasElement.addEventListener('touchend', (e) => {
+            if (this.isPinching) {
+                this.isPinching = false;
                 this.historyModule.enregistrerEtat();
             }
         });
-
-        // Gestion des événements de pan
-        this.hammer.on('panstart', (ev) => {
-            this.lastDeltaX = 0;
-            this.lastDeltaY = 0;
-        });
-
-        this.hammer.on('panmove', (ev) => {
-            this.handlePan(ev);
-        });
-
-        this.hammer.on('panend', (ev) => {
-            this.lastDeltaX = 0;
-            this.lastDeltaY = 0;
-        });
-    }
-
-    handlePinch(ev) {
-        const activeObject = this.canvas.getActiveObject();
-        if (activeObject) {
-            // Redimensionner l'objet sélectionné
-            let scaleX = this.lastScaleX * ev.scale;
-            let scaleY = this.lastScaleY * ev.scale;
-
-            // Limiter le scale
-            scaleX = Math.max(0.1, Math.min(scaleX, 10));
-            scaleY = Math.max(0.1, Math.min(scaleY, 10));
-
-            activeObject.scaleX = scaleX;
-            activeObject.scaleY = scaleY;
-            activeObject.setCoords();
-            this.canvas.requestRenderAll();
-        } else {
-            // Zoomer sur le canevas
-            let newZoom = this.lastZoom * ev.scale;
-
-            // Limiter le zoom
-            newZoom = Math.max(0.5, Math.min(newZoom, 3));
-
-            const center = new fabric.Point(ev.center.x - this.canvas._offset.left, ev.center.y - this.canvas._offset.top);
-            this.canvas.zoomToPoint(center, newZoom);
-        }
-    }
-
-    handlePan(ev) {
-        if (ev.pointerType === 'touch' && ev.maxPointers === 1) {
-            const deltaX = ev.deltaX - this.lastDeltaX;
-            const deltaY = ev.deltaY - this.lastDeltaY;
-
-            this.lastDeltaX = ev.deltaX;
-            this.lastDeltaY = ev.deltaY;
-
-            const vpt = this.canvas.viewportTransform;
-            vpt[4] += deltaX;
-            vpt[5] += deltaY;
-            this.canvas.requestRenderAll();
-        }
-    }
-
-    destroyHammer() {
-        if (this.hammer) {
-            this.hammer.destroy();
-            this.hammer = null;
-        }
     }
 }
 
@@ -1466,7 +1433,7 @@ class App {
         this.duplicateModule = new DuplicateModule(canvas, this.historyModule);
         this.photoPaletteModule = new PhotoPaletteModule(canvas, this.historyModule);
         this.undoRedoModule = new UndoRedoModule(this.historyModule);
-        this.touchModule = new TouchModule(canvas, this.historyModule); // Module pour les gestes tactiles avec Hammer.js
+        this.touchModule = new TouchModule(canvas, this.historyModule); // Module pour les gestes tactiles avec ZingTouch
     }
 
     init() {
@@ -1481,7 +1448,7 @@ class App {
         this.duplicateModule.init();
         this.photoPaletteModule.init();
         this.undoRedoModule.init();
-        this.touchModule.init(); // Initialiser les gestes tactiles avec Hammer.js
+        this.touchModule.init(); // Initialiser les gestes tactiles avec ZingTouch
 
         // Attacher les événements pour l'annulation et le rétablissement
         const undoBtn = document.getElementById('annuler-btn');
