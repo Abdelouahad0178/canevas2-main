@@ -862,7 +862,8 @@ class ImportExportModule {
                     scaleY: 0.5,
                     selectable: true,
                     hasBorders: true,
-                    hasControls: true
+                    hasControls: true,
+                    evented: true // Assurer que l'objet est interactif
                 });
                 this.canvas.add(img);
                 this.canvas.renderAll();
@@ -1281,7 +1282,8 @@ class PhotoPaletteModule {
                 scaleY: 0.5,
                 selectable: true,
                 hasBorders: true,
-                hasControls: true
+                hasControls: true,
+                evented: true // Assurer que l'objet est interactif
             });
             this.canvas.add(img);
             this.canvas.renderAll();
@@ -1327,6 +1329,8 @@ class TouchModule {
         this.lastPosX = 0;
         this.lastPosY = 0;
         this.lastZoom = this.canvas.getZoom();
+        this.lastScaleX = 1;
+        this.lastScaleY = 1;
         this.isDragging = false;
         this.isPinching = false;
         this.init();
@@ -1335,6 +1339,7 @@ class TouchModule {
     init() {
         this.disableFabricTouchScroll();
         this.setupTouchEvents();
+        this.preventDefaultTouchActions();
     }
 
     disableFabricTouchScroll() {
@@ -1342,8 +1347,13 @@ class TouchModule {
         this.canvas.allowTouchScrolling = false;
     }
 
+    preventDefaultTouchActions() {
+        // Empêcher les comportements tactiles par défaut du navigateur
+        this.canvas.upperCanvasEl.style.touchAction = 'none';
+    }
+
     setupTouchEvents() {
-        // Gestion du pincement pour zoomer
+        // Gestion du pincement pour zoomer ou redimensionner l'objet
         this.canvas.on('touch:gesture', (e) => this.onTouchGesture(e));
         // Gestion du pan (déplacement) avec un doigt
         this.canvas.on('touch:drag', (e) => this.onTouchDrag(e));
@@ -1357,11 +1367,35 @@ class TouchModule {
             this.isPinching = true;
             if (e.self.state === 'start') {
                 this.lastZoom = this.canvas.getZoom();
+                const activeObject = this.canvas.getActiveObject();
+                if (activeObject) {
+                    this.lastScaleX = activeObject.scaleX || 1;
+                    this.lastScaleY = activeObject.scaleY || 1;
+                }
             }
-            let newZoom = this.lastZoom * e.self.scale;
-            newZoom = Math.max(0.5, Math.min(newZoom, 3));
-            const center = this.canvas.getCenter();
-            this.canvas.zoomToPoint({ x: e.self.x, y: e.self.y }, newZoom);
+
+            const activeObject = this.canvas.getActiveObject();
+
+            if (activeObject) {
+                // Redimensionner l'objet sélectionné
+                let newScaleX = this.lastScaleX * e.self.scale;
+                let newScaleY = this.lastScaleY * e.self.scale;
+
+                // Limiter le scale
+                newScaleX = Math.max(0.1, Math.min(newScaleX, 10));
+                newScaleY = Math.max(0.1, Math.min(newScaleY, 10));
+
+                activeObject.scaleX = newScaleX;
+                activeObject.scaleY = newScaleY;
+                activeObject.setCoords();
+                this.canvas.renderAll();
+            } else {
+                // Zoomer sur le canevas
+                let newZoom = this.lastZoom * e.self.scale;
+                newZoom = Math.max(0.5, Math.min(newZoom, 3));
+                const center = new fabric.Point(e.self.x, e.self.y);
+                this.canvas.zoomToPoint(center, newZoom);
+            }
         }
     }
 
@@ -1370,6 +1404,13 @@ class TouchModule {
         if (e.e.touches && e.e.touches.length === 1) {
             const deltaX = e.e.touches[0].clientX - this.lastPosX;
             const deltaY = e.e.touches[0].clientY - this.lastPosY;
+
+            const activeObject = this.canvas.getActiveObject();
+            if (activeObject && activeObject.isMoving) {
+                // Laisser Fabric.js gérer le déplacement de l'objet
+                return;
+            }
+
             this.canvas.relativePan({ x: deltaX, y: deltaY });
             this.lastPosX = e.e.touches[0].clientX;
             this.lastPosY = e.e.touches[0].clientY;
@@ -1387,6 +1428,13 @@ class TouchModule {
     onTouchUp(e) {
         this.isDragging = false;
         this.isPinching = false;
+
+        const activeObject = this.canvas.getActiveObject();
+        if (activeObject) {
+            activeObject.setCoords();
+            this.canvas.renderAll();
+            this.historyModule.enregistrerEtat();
+        }
     }
 }
 
@@ -1467,7 +1515,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isDrawingMode: false,
         backgroundColor: 'white',
         allowTouchScrolling: false, // Désactiver le défilement tactile par défaut de Fabric.js
-        selection: false, // Désactiver la sélection par défaut
+        selection: true, // Activer la sélection pour interagir avec les objets
         width: drawingBoard.clientWidth, // Largeur du conteneur
         height: 2244 // Hauteur équivalente à 20 pages A4
     });

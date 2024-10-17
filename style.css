@@ -534,6 +534,27 @@ section {
     cursor: text;
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+canvas {
+    touch-action: none;
+    -ms-touch-action: none;
+    -webkit-user-select: none;
+}
+
+
+
+
 /* Responsivité */
 
 /* Pour les écrans de 1440px et plus */
