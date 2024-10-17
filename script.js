@@ -1319,118 +1319,74 @@ class UndoRedoModule {
     }
 }
 
-// Module de Gestion des Gestes Tactiles avec Hammer.js et Fabric.js
+// Module de Gestion des Gestes Tactiles avec Fabric.js
 class TouchModule {
     constructor(canvas, historyModule) {
         this.canvas = canvas;
         this.historyModule = historyModule;
-        this.hammer = null;
+        this.lastPosX = 0;
+        this.lastPosY = 0;
         this.lastZoom = this.canvas.getZoom();
-        this.lastDeltaX = 0;
-        this.lastDeltaY = 0;
+        this.isDragging = false;
+        this.isPinching = false;
+        this.init();
     }
 
     init() {
-        this.initHammer();
+        this.disableFabricTouchScroll();
+        this.setupTouchEvents();
     }
 
-    initHammer() {
-        const canvasElement = this.canvas.upperCanvasEl;
-
-        // Initialiser Hammer.js pour le pincement et le pan
-        this.hammer = new Hammer.Manager(canvasElement);
-
-        const pinch = new Hammer.Pinch();
-        const pan = new Hammer.Pan({ direction: Hammer.DIRECTION_ALL, threshold: 0 });
-        this.hammer.add([pinch, pan]);
-
-        this.hammer.on('pinchstart', (ev) => {
-            this.lastZoom = this.canvas.getZoom();
-
-            const activeObject = this.canvas.getActiveObject();
-            if (activeObject) {
-                activeObject.originalScaleX = activeObject.scaleX || 1;
-                activeObject.originalScaleY = activeObject.scaleY || 1;
-            }
-        });
-
-        this.hammer.on('pinchmove', (ev) => {
-            this.handlePinch(ev);
-        });
-
-        this.hammer.on('pinchend', (ev) => {
-            this.lastZoom = this.canvas.getZoom();
-
-            const activeObject = this.canvas.getActiveObject();
-            if (activeObject && activeObject.originalScaleX && activeObject.originalScaleY) {
-                delete activeObject.originalScaleX;
-                delete activeObject.originalScaleY;
-                // Enregistrer l'état après redimensionnement
-                this.historyModule.enregistrerEtat();
-            }
-        });
-
-        this.hammer.on('panstart', (ev) => {
-            this.lastDeltaX = 0;
-            this.lastDeltaY = 0;
-        });
-
-        this.hammer.on('panmove', (ev) => {
-            this.handlePan(ev);
-        });
-
-        this.hammer.on('panend', (ev) => {
-            this.lastDeltaX = 0;
-            this.lastDeltaY = 0;
-        });
+    disableFabricTouchScroll() {
+        // Désactiver le défilement tactile par défaut de Fabric.js
+        this.canvas.allowTouchScrolling = false;
     }
 
-    handlePinch(ev) {
-        const activeObject = this.canvas.getActiveObject();
-        if (activeObject) {
-            let scaleX = activeObject.originalScaleX * ev.scale;
-            let scaleY = activeObject.originalScaleY * ev.scale;
+    setupTouchEvents() {
+        // Gestion du pincement pour zoomer
+        this.canvas.on('touch:gesture', (e) => this.onTouchGesture(e));
+        // Gestion du pan (déplacement) avec un doigt
+        this.canvas.on('touch:drag', (e) => this.onTouchDrag(e));
+        // Stocker les positions initiales
+        this.canvas.on('touch:down', (e) => this.onTouchDown(e));
+        this.canvas.on('touch:up', (e) => this.onTouchUp(e));
+    }
 
-            // Limiter le scale
-            scaleX = Math.max(0.1, Math.min(scaleX, 10));
-            scaleY = Math.max(0.1, Math.min(scaleY, 10));
-
-            activeObject.scaleX = scaleX;
-            activeObject.scaleY = scaleY;
-            activeObject.setCoords();
-            this.canvas.requestRenderAll();
-        } else {
-            // Si aucun objet n'est sélectionné, zoomer sur le canevas
-            let newZoom = this.lastZoom * ev.scale;
-
-            // Limiter le zoom
+    onTouchGesture(e) {
+        if (e.e.touches && e.e.touches.length === 2) {
+            this.isPinching = true;
+            if (e.self.state === 'start') {
+                this.lastZoom = this.canvas.getZoom();
+            }
+            let newZoom = this.lastZoom * e.self.scale;
             newZoom = Math.max(0.5, Math.min(newZoom, 3));
-
-            const center = new fabric.Point(ev.center.x - this.canvas._offset.left, ev.center.y - this.canvas._offset.top);
-            this.canvas.zoomToPoint(center, newZoom);
+            const center = this.canvas.getCenter();
+            this.canvas.zoomToPoint({ x: e.self.x, y: e.self.y }, newZoom);
         }
     }
 
-    handlePan(ev) {
-        if (ev.pointerType === 'touch' && ev.maxPointers === 1) {
-            const deltaX = ev.deltaX - this.lastDeltaX;
-            const deltaY = ev.deltaY - this.lastDeltaY;
-
-            this.lastDeltaX = ev.deltaX;
-            this.lastDeltaY = ev.deltaY;
-
-            const vpt = this.canvas.viewportTransform;
-            vpt[4] += deltaX;
-            vpt[5] += deltaY;
-            this.canvas.requestRenderAll();
+    onTouchDrag(e) {
+        if (this.isPinching) return; // Ne pas panner pendant un pincement
+        if (e.e.touches && e.e.touches.length === 1) {
+            const deltaX = e.e.touches[0].clientX - this.lastPosX;
+            const deltaY = e.e.touches[0].clientY - this.lastPosY;
+            this.canvas.relativePan({ x: deltaX, y: deltaY });
+            this.lastPosX = e.e.touches[0].clientX;
+            this.lastPosY = e.e.touches[0].clientY;
         }
     }
 
-    destroyHammer() {
-        if (this.hammer) {
-            this.hammer.destroy();
-            this.hammer = null;
+    onTouchDown(e) {
+        if (e.e.touches && e.e.touches.length === 1) {
+            this.lastPosX = e.e.touches[0].clientX;
+            this.lastPosY = e.e.touches[0].clientY;
+            this.isDragging = true;
         }
+    }
+
+    onTouchUp(e) {
+        this.isDragging = false;
+        this.isPinching = false;
     }
 }
 
@@ -1464,7 +1420,7 @@ class App {
         this.duplicateModule.init();
         this.photoPaletteModule.init();
         this.undoRedoModule.init();
-        this.touchModule.init(); // Initialiser les gestes tactiles
+        // Les gestes tactiles sont gérés dans le constructeur du TouchModule
 
         // Attacher les événements pour l'annulation et le rétablissement
         const undoBtn = document.getElementById('annuler-btn');
@@ -1510,7 +1466,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const canvas = new fabric.Canvas('canvas', {
         isDrawingMode: false,
         backgroundColor: 'white',
-        allowTouchScrolling: false, // Désactiver pour gérer les événements tactiles manuellement
+        allowTouchScrolling: false, // Désactiver le défilement tactile par défaut de Fabric.js
+        selection: false, // Désactiver la sélection par défaut
         width: drawingBoard.clientWidth, // Largeur du conteneur
         height: 2244 // Hauteur équivalente à 20 pages A4
     });

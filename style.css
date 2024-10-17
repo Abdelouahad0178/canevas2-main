@@ -295,8 +295,8 @@ section {
     position: absolute;
     z-index: 9999; /* Assurez-vous que la calculatrice est au-dessus de tout */
     left: 50%;
-    top: 20%;
-    transform: translate(-50%, -50%);
+    top: 50%;
+    transform: translate(-50%, -40%);
     background: #fff;
     padding: 20px;
     border-radius: 10px;
